@@ -4,7 +4,7 @@ Linux device driver for counting pulses at the GPIO line
 
 Device tree configuration example for Banana PI:
 
-/* Device node */
+`/* Device node */
 counters {
         compatible = "gpio-pulse-counter";
         /* Counter node */
@@ -35,3 +35,4 @@ counters {
                 allwinner,pull = <SUN4I_PINCTRL_NO_PULL>;
         };
 };
+`
