@@ -1,8 +1,8 @@
-Linux kernel drivers for variety counter devices
+## Linux kernel drivers for variety counter devices
 
-Linux device driver for counting pulses at the GPIO line
+## Linux device driver for counting pulses at the GPIO line
 
-Device tree configuration example for Banana PI:
+## Device tree configuration example for Banana PI:
 
 `/* Device node */
 counters {
