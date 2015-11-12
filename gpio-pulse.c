@@ -9,6 +9,7 @@
 #include <linux/slab.h>
 #include <linux/list.h>
 #include <linux/interrupt.h>
+#include <linux/gpio.h>
 
 #include "counters.h"
 
@@ -72,6 +73,11 @@ static void shutdown_device(struct counters_device *cdev) {
 
     /* Free IRQ */
     free_irq(drvdata->irq, cdev);
+    
+    if(gpio_is_valid(drvdata->gpio)) {
+        /* Need to free GPIO pin */
+        devm_gpio_free(&cdev->dev, drvdata->gpio);
+    }
 }
 
 /**
@@ -111,6 +117,19 @@ struct counters_device *build_device(const char *name, int irq, int gpio) {
             return ERR_PTR(status);
         }
 
+        if(gpio_is_valid(gpio)) {
+            /* Specified GPIO pin, allocate it to prevent usage by other drivers */
+            status = devm_gpio_request(&cdev->dev, gpio, name);
+            
+            if(status) {
+                TRACE(KERN_ALERT, "Unable to allocate GPIO pin %d.\n", gpio);
+                
+                counters_unregister_device(cdev);
+            
+                return ERR_PTR(status);
+            }
+        }
+        
         /* Attach IRQ handler */
         status = request_irq(irq, 
                              device_isr, 
