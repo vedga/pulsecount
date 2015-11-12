@@ -31,20 +31,20 @@ static ssize_t count_store(struct device *device,
                            struct device_attribute *attr, 
                            const char *buf, 
                            size_t size);
-static ssize_t lastPulseDelay_show(struct device *device, 
-                                   struct device_attribute *attr, 
-                                   char *buf);
-static ssize_t lastPulseDelay_store(struct device *device, 
-                                    struct device_attribute *attr, 
-                                    const char *buf, 
-                                    size_t size);
-static ssize_t averagePulseDelay_show(struct device *device, 
+static ssize_t last_pulse_period_show(struct device *device, 
                                       struct device_attribute *attr, 
                                       char *buf);
-static ssize_t averagePulseDelay_store(struct device *device, 
+static ssize_t last_pulse_period_store(struct device *device, 
                                        struct device_attribute *attr, 
                                        const char *buf, 
                                        size_t size);
+static ssize_t average_pulse_period_show(struct device *device, 
+                                         struct device_attribute *attr, 
+                                         char *buf);
+static ssize_t average_pulse_period_store(struct device *device, 
+                                          struct device_attribute *attr, 
+                                          const char *buf, 
+                                          size_t size);
 
 static int timeval_subtract(struct timeval *result, 
                             struct timeval  *x, 
@@ -56,15 +56,15 @@ static int clear_count_when_reading = 0;
 
 static DEVICE_ATTR_WO(pulse); 
 static DEVICE_ATTR_RW(count); 
-static DEVICE_ATTR_RW(lastPulseDelay); 
-static DEVICE_ATTR_RW(averagePulseDelay); 
+static DEVICE_ATTR_RW(last_pulse_period); 
+static DEVICE_ATTR_RW(average_pulse_period); 
 
 /* Набор аттрибутов в группе "values" для устройств */
 static struct attribute *counters_device_values_attributes[] = {
     &dev_attr_pulse.attr,
     &dev_attr_count.attr,
-    &dev_attr_lastPulseDelay.attr,
-    &dev_attr_averagePulseDelay.attr,
+    &dev_attr_last_pulse_period.attr,
+    &dev_attr_average_pulse_period.attr,
     NULL
 };
 
@@ -161,10 +161,10 @@ struct counters_device *counters_allocate_device(size_t driver_private_data_size
         dev_set_drvdata(&dev->dev, pvt);
         
         // Инициализация критической секции для доступа к результатам измерений
-        spin_lock_init(&dev->measurementsLocked);
+        spin_lock_init(&dev->measurements_lock);
         
         // Кол-во подсчитанных импульсов на устройстве
-        dev->pulseCount = 0ul;
+        dev->pulse_count = 0ul;
         
         /* Т.к. используются данные нашего модуля, увеличим кол-во ссылок на него  */
         __module_get(THIS_MODULE);
@@ -245,54 +245,54 @@ void counters_pulse(struct counters_device *dev) {
     // Текущая временная метка
     do_gettimeofday(&now);
     
-    spin_lock(&dev->measurementsLocked);
+    spin_lock(&dev->measurements_lock);
     
     // Подсчет общего кол-ва импульсов
-    dev->pulseCount++;
+    dev->pulse_count++;
 
-    if(dev->lastPulse.tv_sec || dev->lastPulse.tv_usec) {
+    if(dev->last_pulse.tv_sec || dev->last_pulse.tv_usec) {
         // Есть информация о временной точке предпоследнего импульса
         // Определяем время, которое прошло с момента его регистрации
-        if(timeval_subtract(&dev->lastPulseDelay, &now, &dev->lastPulse)) {
+        if(timeval_subtract(&dev->last_pulse_period, &now, &dev->last_pulse)) {
             // Текущее значение меньше предыдущего (т.е. было переполнение)
             // @TODO: Пофиксить переполнение
-            dev->lastPulseDelay.tv_sec = 0;
-            dev->lastPulseDelay.tv_usec = 0;
+            dev->last_pulse_period.tv_sec = 0;
+            dev->last_pulse_period.tv_usec = 0;
         }
         
-        if(dev->averagePulseDelay.tv_sec || dev->averagePulseDelay.tv_usec) {
+        if(dev->average_pulse_period.tv_sec || dev->average_pulse_period.tv_usec) {
             // Не первое измерение, можем продолжать вычислять среднее значение
-            dev->averagePulseDelay.tv_sec += dev->lastPulseDelay.tv_sec;
-            dev->averagePulseDelay.tv_usec += dev->lastPulseDelay.tv_usec;
+            dev->average_pulse_period.tv_sec += dev->last_pulse_period.tv_sec;
+            dev->average_pulse_period.tv_usec += dev->last_pulse_period.tv_usec;
             
-            if(dev->averagePulseDelay.tv_usec >= USEC_VALUE) {
-                dev->averagePulseDelay.tv_sec += dev->averagePulseDelay.tv_usec / USEC_VALUE;
+            if(dev->average_pulse_period.tv_usec >= USEC_VALUE) {
+                dev->average_pulse_period.tv_sec += dev->average_pulse_period.tv_usec / USEC_VALUE;
                 
-                dev->averagePulseDelay.tv_usec %= USEC_VALUE;
+                dev->average_pulse_period.tv_usec %= USEC_VALUE;
             }
             
             // Делим среднее значение на 2
-            dev->averagePulseDelay.tv_usec >>= 1;
-            if(dev->averagePulseDelay.tv_sec & 1) {
-                dev->averagePulseDelay.tv_usec += USEC_VALUE / 2;
+            dev->average_pulse_period.tv_usec >>= 1;
+            if(dev->average_pulse_period.tv_sec & 1) {
+                dev->average_pulse_period.tv_usec += USEC_VALUE / 2;
             }
-            dev->averagePulseDelay.tv_sec >>= 1;
+            dev->average_pulse_period.tv_sec >>= 1;
 
-            if(dev->averagePulseDelay.tv_usec >= USEC_VALUE) {
-                dev->averagePulseDelay.tv_sec += dev->averagePulseDelay.tv_usec / USEC_VALUE;
+            if(dev->average_pulse_period.tv_usec >= USEC_VALUE) {
+                dev->average_pulse_period.tv_sec += dev->average_pulse_period.tv_usec / USEC_VALUE;
                 
-                dev->averagePulseDelay.tv_usec %= USEC_VALUE;
+                dev->average_pulse_period.tv_usec %= USEC_VALUE;
             }
         } else {
             // Первое измерение - пока не можем вычислить среднее значение
-            memcpy(&dev->averagePulseDelay, &dev->lastPulseDelay, sizeof(dev->averagePulseDelay));
+            memcpy(&dev->average_pulse_period, &dev->last_pulse_period, sizeof(dev->average_pulse_period));
         }
     }
     
     // Текущая временная метка
-    memcpy(&dev->lastPulse, &now, sizeof(dev->lastPulse));
+    memcpy(&dev->last_pulse, &now, sizeof(dev->last_pulse));
     
-    spin_unlock(&dev->measurementsLocked);
+    spin_unlock(&dev->measurements_lock);
 }
 EXPORT_SYMBOL(counters_pulse);
 
@@ -357,16 +357,16 @@ static ssize_t count_show(struct device *device,
     unsigned long value;
     struct counters_device *dev = to_counters_device(device);
 
-    spin_lock(&dev->measurementsLocked);
+    spin_lock(&dev->measurements_lock);
     
-    value = dev->pulseCount;
+    value = dev->pulse_count;
     
     if(clear_count_when_reading) {
         /* Requested clear count after it readed */
-        dev->pulseCount = 0;
+        dev->pulse_count = 0;
     }
     
-    spin_unlock(&dev->measurementsLocked);
+    spin_unlock(&dev->measurements_lock);
     
     return scnprintf(buf, PAGE_SIZE, "%lu\n", value);
 }
@@ -389,11 +389,11 @@ static ssize_t count_store(struct device *device,
     if(sscanf(buf, "%lu", &value) == 1) {
         struct counters_device *dev = to_counters_device(device);
         
-        spin_lock(&dev->measurementsLocked);
+        spin_lock(&dev->measurements_lock);
         
-        dev->pulseCount = value;
+        dev->pulse_count = value;
         
-        spin_unlock(&dev->measurementsLocked);
+        spin_unlock(&dev->measurements_lock);
         
         return size;
     }
@@ -409,18 +409,18 @@ static ssize_t count_store(struct device *device,
  * @param buf
  * @return время в наносекундах
  */
-static ssize_t lastPulseDelay_show(struct device *device, 
-                                   struct device_attribute *attr, 
-                                   char *buf) {
+static ssize_t last_pulse_period_show(struct device *device, 
+                                      struct device_attribute *attr, 
+                                      char *buf) {
     struct timeval value;
     
     struct counters_device *dev = to_counters_device(device);
 
-    spin_lock(&dev->measurementsLocked);
+    spin_lock(&dev->measurements_lock);
     
-    memcpy(&value, &dev->lastPulseDelay, sizeof(value));
+    memcpy(&value, &dev->last_pulse_period, sizeof(value));
     
-    spin_unlock(&dev->measurementsLocked);
+    spin_unlock(&dev->measurements_lock);
     
     return (value.tv_sec || value.tv_usec) ?
         scnprintf(buf, PAGE_SIZE, "%lu%lu\n", value.tv_sec, value.tv_usec) :
@@ -436,18 +436,18 @@ static ssize_t lastPulseDelay_show(struct device *device,
  * @param size
  * @return 
  */
-static ssize_t lastPulseDelay_store(struct device *device, 
-                                    struct device_attribute *attr, 
-                                    const char *buf, 
-                                    size_t size) {
+static ssize_t last_pulse_period_store(struct device *device, 
+                                       struct device_attribute *attr, 
+                                       const char *buf, 
+                                       size_t size) {
     struct counters_device *dev = to_counters_device(device);
 
-    spin_lock(&dev->measurementsLocked);
+    spin_lock(&dev->measurements_lock);
 
-    dev->lastPulseDelay.tv_sec = 0;
-    dev->lastPulseDelay.tv_usec = 0;
+    dev->last_pulse_period.tv_sec = 0;
+    dev->last_pulse_period.tv_usec = 0;
 
-    spin_unlock(&dev->measurementsLocked);
+    spin_unlock(&dev->measurements_lock);
 
     return size;
 }
@@ -460,18 +460,18 @@ static ssize_t lastPulseDelay_store(struct device *device,
  * @param buf
  * @return 
  */
-static ssize_t averagePulseDelay_show(struct device *device, 
-                                      struct device_attribute *attr, 
-                                      char *buf) {
+static ssize_t average_pulse_period_show(struct device *device, 
+                                         struct device_attribute *attr, 
+                                         char *buf) {
     struct timeval value;
     
     struct counters_device *dev = to_counters_device(device);
 
-    spin_lock(&dev->measurementsLocked);
+    spin_lock(&dev->measurements_lock);
     
-    memcpy(&value, &dev->averagePulseDelay, sizeof(value));
+    memcpy(&value, &dev->average_pulse_period, sizeof(value));
     
-    spin_unlock(&dev->measurementsLocked);
+    spin_unlock(&dev->measurements_lock);
     
     return (value.tv_sec || value.tv_usec) ?
         scnprintf(buf, PAGE_SIZE, "%lu%lu\n", value.tv_sec, value.tv_usec) :
@@ -487,18 +487,18 @@ static ssize_t averagePulseDelay_show(struct device *device,
  * @param size
  * @return 
  */
-static ssize_t averagePulseDelay_store(struct device *device, 
-                                       struct device_attribute *attr, 
-                                       const char *buf, 
-                                       size_t size) {
+static ssize_t average_pulse_period_store(struct device *device, 
+                                          struct device_attribute *attr, 
+                                          const char *buf, 
+                                          size_t size) {
     struct counters_device *dev = to_counters_device(device);
 
-    spin_lock(&dev->measurementsLocked);
+    spin_lock(&dev->measurements_lock);
 
-    dev->averagePulseDelay.tv_sec = 0;
-    dev->averagePulseDelay.tv_usec = 0;
+    dev->average_pulse_period.tv_sec = 0;
+    dev->average_pulse_period.tv_usec = 0;
 
-    spin_unlock(&dev->measurementsLocked);
+    spin_unlock(&dev->measurements_lock);
 
     return size;
 }

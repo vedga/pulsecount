@@ -11,15 +11,15 @@
 
 struct counters_device {
     /* Для эксклюзивного доступа к результатам измерений */
-    spinlock_t measurementsLocked;
+    spinlock_t measurements_lock;
     /* Кол-во подсчитанных импульсов на устройстве */
-    unsigned long pulseCount;
+    unsigned long pulse_count;
     /* Временная точка последнего обнаруженного импульса */
-    struct timeval lastPulse;
+    struct timeval last_pulse;
     /* Время, за которое был обнаружен последний зафиксированный импульс */
-    struct timeval lastPulseDelay;
+    struct timeval last_pulse_period;
     /* Среднее время между импульсами */
-    struct timeval averagePulseDelay;
+    struct timeval average_pulse_period;
     /* Release device driver's resources function */
     void (*shutdown)(struct counters_device *);
     /* Kernel device resource */
