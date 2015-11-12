@@ -10,6 +10,8 @@
 #define DEVICE_NAME  "counter"
 
 struct counters_device {
+    /* Physical resource name */
+    const char* name;
     /* Для эксклюзивного доступа к результатам измерений */
     spinlock_t measurements_lock;
     /* Кол-во подсчитанных импульсов на устройстве */
@@ -55,7 +57,7 @@ struct gpio_pulse_counter {
     int gpio;
 };
 
-struct counters_device *counters_allocate_device(size_t driver_private_data_size);
+struct counters_device *counters_allocate_device(const char* name, size_t driver_private_data_size);
 void counters_free_device(struct counters_device *dev);
 int counters_register_device(struct counters_device *dev);
 void counters_unregister_device(struct counters_device *dev);

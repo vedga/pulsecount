@@ -78,12 +78,15 @@ static void shutdown_device(struct counters_device *cdev) {
         free_irq(drvdata->irq, cdev);
     }
     
+    /* We don't need release GPIO resource, because it released automatically */
+#if 0    
     if(gpio_is_valid(drvdata->gpio)) {
         TRACE(KERN_DEBUG, "Release GPIO pin %d\n", drvdata->gpio);
         
         /* Need to free GPIO pin */
         devm_gpio_free(&cdev->dev, drvdata->gpio);
     }
+#endif
 }
 
 /**
@@ -100,7 +103,7 @@ static void shutdown_device(struct counters_device *cdev) {
  */
 struct counters_device *build_device(const char *name, int irq, int gpio) {
     struct counters_device *cdev = 
-        counters_allocate_device(sizeof(struct gpio_pulse_counter));
+        counters_allocate_device(name, sizeof(struct gpio_pulse_counter));
 
     if(IS_ERR_OR_NULL(cdev)) {
         TRACE(KERN_ALERT, "Unable to allocate class data.\n");

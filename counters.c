@@ -3,6 +3,7 @@
 #include <linux/init.h>
 #include <linux/device.h>
 #include <linux/slab.h>
+#include <linux/string.h>
 
 #include "counters.h"
 
@@ -19,6 +20,11 @@ static char *counters_devnode(struct device *dev, umode_t *mode);
 static ssize_t clear_count_when_reading_show(struct class *class, struct class_attribute *attr, char *buf);
 static ssize_t clear_count_when_reading_store(struct class *class, struct class_attribute *attr, const char *buf, size_t size);
 static void counters_device_release(struct device *device);
+
+static ssize_t name_show(struct device *device, 
+                         struct device_attribute *attr, 
+                         char *buf);
+
 
 static ssize_t pulse_store(struct device *device, 
                            struct device_attribute *attr, 
@@ -54,6 +60,10 @@ static int timeval_subtract(struct timeval *result,
 /* Clear conters when it readed */
 static int clear_count_when_reading = 0;
 
+/* Root device attributes */
+static DEVICE_ATTR_RO(name);
+
+/* Device attributes in the group "values" */
 static DEVICE_ATTR_WO(pulse); 
 static DEVICE_ATTR_RW(count); 
 static DEVICE_ATTR_RW(last_pulse_period); 
@@ -128,7 +138,8 @@ EXPORT_SYMBOL_GPL(counters_class);
  * counters_free_device(), if device is not registered;
  * counters_unregister_device(), if device is registered by counters_register_device()
  */
-struct counters_device *counters_allocate_device(size_t driver_private_data_size) {
+struct counters_device *counters_allocate_device(const char* name, 
+                                                 size_t driver_private_data_size) {
     static atomic_t counter_no = ATOMIC_INIT(-1);
     void *pvt = driver_private_data_size ? kzalloc(driver_private_data_size, GFP_KERNEL) : NULL;
     struct counters_device *dev;
@@ -146,6 +157,22 @@ struct counters_device *counters_allocate_device(size_t driver_private_data_size
     dev = kzalloc(sizeof(struct counters_device), GFP_KERNEL);
 
     if(dev) {
+        /* Store physical resource name */
+        dev->name = kstrdup_const(name, GFP_KERNEL);
+        
+        if(!dev->name) {
+            if(pvt) {
+                /* Free allocated resources */
+                kfree(pvt);
+            }
+            
+            kfree(dev);
+            
+            TRACE(KERN_ALERT, "Unable to allocate memory for device class data.\n");
+
+            return ERR_PTR(-ENOMEM);
+        }
+        
         /* Устанавливаем тип и класс устройства и инициализируем его ресурсы */
         dev->dev.type = &counters_device_type;
         dev->dev.class = &counters_class;
@@ -213,7 +240,9 @@ int counters_register_device(struct counters_device *dev) {
     
     rc = device_add(&dev->dev);
 
-    if(rc) {
+    if(!rc) {
+        /* Create attribute "name" for this device */
+        rc = device_create_file(&dev->dev, &dev_attr_name);
     }
 
     return rc;
@@ -227,6 +256,9 @@ EXPORT_SYMBOL(counters_register_device);
  */
 void counters_unregister_device(struct counters_device *dev) {
     TRACE(KERN_INFO, "Unregister class device: %pK\n", dev);
+
+    /* Remove attribute name for this device */
+    device_remove_file(&dev->dev, &dev_attr_name);
     
     device_del(&dev->dev);
 
@@ -318,11 +350,22 @@ static void counters_device_release(struct device *device) {
     
     TRACE(KERN_INFO, "Deallocate class data: %pK\n", cdev);
     
-    /* Освобождаем выделенные ранее ресурсы */
+    /* Release string resource */
+    kfree_const(cdev->name);
+    
+    /* Release counters_device structure */
     kfree(cdev);
 
     /* Счетчик ссылок на модуль был увеличен при выделении ресурсов, теперь его можно уменьшить */
     module_put(THIS_MODULE);
+}
+
+static ssize_t name_show(struct device *device, 
+                         struct device_attribute *attr, 
+                         char *buf) {
+    struct counters_device *cdev = to_counters_device(device);
+    
+    return scnprintf(buf, PAGE_SIZE, "%s", cdev->name);
 }
 
 /**
@@ -368,7 +411,7 @@ static ssize_t count_show(struct device *device,
     
     spin_unlock(&dev->measurements_lock);
     
-    return scnprintf(buf, PAGE_SIZE, "%lu\n", value);
+    return scnprintf(buf, PAGE_SIZE, "%lu", value);
 }
 
 /**
@@ -423,8 +466,8 @@ static ssize_t last_pulse_period_show(struct device *device,
     spin_unlock(&dev->measurements_lock);
     
     return (value.tv_sec || value.tv_usec) ?
-        scnprintf(buf, PAGE_SIZE, "%lu%lu\n", value.tv_sec, value.tv_usec) :
-        scnprintf(buf, PAGE_SIZE, "%u\n", 0);
+        scnprintf(buf, PAGE_SIZE, "%lu%lu", value.tv_sec, value.tv_usec) :
+        scnprintf(buf, PAGE_SIZE, "%u", 0);
 }
 
 /**
@@ -474,8 +517,8 @@ static ssize_t average_pulse_period_show(struct device *device,
     spin_unlock(&dev->measurements_lock);
     
     return (value.tv_sec || value.tv_usec) ?
-        scnprintf(buf, PAGE_SIZE, "%lu%lu\n", value.tv_sec, value.tv_usec) :
-        scnprintf(buf, PAGE_SIZE, "%u\n", 0);
+        scnprintf(buf, PAGE_SIZE, "%lu%lu", value.tv_sec, value.tv_usec) :
+        scnprintf(buf, PAGE_SIZE, "%u", 0);
 }
 
 /**
@@ -506,7 +549,7 @@ static ssize_t average_pulse_period_store(struct device *device,
 
 static ssize_t clear_count_when_reading_show(struct class *class, struct class_attribute *attr, char *buf)
 {
-    return scnprintf(buf, PAGE_SIZE, "%d\n", clear_count_when_reading);
+    return scnprintf(buf, PAGE_SIZE, "%d", clear_count_when_reading);
 }
 
 static ssize_t clear_count_when_reading_store(struct class *class, struct class_attribute *attr, const char *buf, size_t size)
