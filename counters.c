@@ -69,7 +69,7 @@ static DEVICE_ATTR_RW(count);
 static DEVICE_ATTR_RW(last_pulse_period); 
 static DEVICE_ATTR_RW(average_pulse_period); 
 
-/* Набор аттрибутов в группе "values" для устройств */
+/* Attributes at the "values" group for device drivers */
 static struct attribute *counters_device_values_attributes[] = {
     &dev_attr_pulse.attr,
     &dev_attr_count.attr,
@@ -78,54 +78,39 @@ static struct attribute *counters_device_values_attributes[] = {
     NULL
 };
 
-/* Группа аттрибутов, в которой хранятся результаты измерений */
+/* Measurements result attribute group */
 static const struct attribute_group counters_device_values = {
     .name = "values",
     .attrs = counters_device_values_attributes,
 };
 
-/* Группы аттрибутов, добавляемые к каждому устройству из данного класса */
+/* Attribute groups for each device driver for this device class */
 static const struct attribute_group *counters_device_attr_groups[] = {
     &counters_device_values,
     NULL
 };
 
-/**
- * Описатель драйвера устройства
- */
+/* Device driver descriptor */
 static struct device_type counters_device_type = {
-    /* Группы, добавляемые к каждому устройству этого класса */
+    /* Groups, added for each device driver for this class */
     .groups = counters_device_attr_groups,
-    /* Освобождение приватных ресурсов, которые были созданы при помощи counters_allocate_device(void) */
+    /* Release private resources, allocated by counters_allocate_device() */
     .release = counters_device_release,
 };
 
-/**
- * Аттрибуты, добавляемые ко всему классу устройств
- */
+/* Attributes for device class */
 static struct class_attribute counters_class_attrs[] = {
         __ATTR_RW(clear_count_when_reading),
         __ATTR_NULL,
 };
 
-/**
- * Описатель класса устройств
- */
+/* Device class descriptor */
 struct class counters_class = {
         .name           = DEVICE_CLASS,
         .devnode        = counters_devnode,
         .class_attrs    = counters_class_attrs,
 };
 EXPORT_SYMBOL_GPL(counters_class);
-
-/**
- Создание приватных ресурсов для устройств нашего класса
- 
- NOTE:
- Использовать counters_free_device(struct counters_device *dev) для освобождения ресурсов,
- если устройство еще не было зарегистрировано. Для зарегистрированных устройств следует
- использовать вызов counters_unregister_device()
-*/
 
 /**
  * Allocate resource for device drivers
@@ -145,7 +130,9 @@ struct counters_device *counters_allocate_device(const char* name,
     struct counters_device *dev;
     
     if(pvt) {
-        TRACE(KERN_INFO, "Allocated driver's private data: %pK\n", pvt);
+#if 0        
+        TRACE(KERN_DEBUG, "Allocated driver's private data: %pK\n", pvt);
+#endif        
     } else {
         if(driver_private_data_size) {
             TRACE(KERN_ALERT, "Unable to allocate private driver's memory.\n");
@@ -206,18 +193,21 @@ struct counters_device *counters_allocate_device(const char* name,
         return ERR_PTR(-ENOMEM);
     }
 
-    TRACE(KERN_INFO, "Allocated class data: %pK\n", dev);
+#if 0        
+    TRACE(KERN_DEBUG, "Allocated class data: %pK\n", dev);
+#endif
     
     return dev;
 }
 EXPORT_SYMBOL(counters_allocate_device);
 
 /**
- * Освобождение ресурсов, выделенных counters_allocate_device()
+ * Free resources, allocated by counters_allocate_device()
  * 
  * @param dev
  * 
- * Должно использоваться только до выполнения регистрации устройства.
+ * NOTE:
+ * Can be called only before register device
  */
 void counters_free_device(struct counters_device *dev) {
     if(dev) {
@@ -228,7 +218,7 @@ void counters_free_device(struct counters_device *dev) {
 EXPORT_SYMBOL(counters_free_device);
 
 /**
- * Выполнение регистрации устройства
+ * Register device
  * 
  * @param dev
  * @return 
@@ -236,7 +226,9 @@ EXPORT_SYMBOL(counters_free_device);
 int counters_register_device(struct counters_device *dev) {
     int rc;
 
-    TRACE(KERN_INFO, "Register class device: %pK\n", dev);
+#if 0            
+    TRACE(KERN_DEBUG, "Register class device: %pK\n", dev);
+#endif    
     
     rc = device_add(&dev->dev);
 
@@ -250,12 +242,14 @@ int counters_register_device(struct counters_device *dev) {
 EXPORT_SYMBOL(counters_register_device);
 
 /**
- * Удаление регистрации устройства с освобождением ресурсов
+ * Unregister device
  * 
  * @param dev
  */
 void counters_unregister_device(struct counters_device *dev) {
-    TRACE(KERN_INFO, "Unregister class device: %pK\n", dev);
+#if 0        
+    TRACE(KERN_DEBUG, "Unregister class device: %pK\n", dev);
+#endif    
 
     /* Remove attribute name for this device */
     device_remove_file(&dev->dev, &dev_attr_name);
@@ -267,19 +261,19 @@ void counters_unregister_device(struct counters_device *dev) {
 EXPORT_SYMBOL(counters_unregister_device);
 
 /**
- * Регистрация факта импульса
+ * Count pulse event
  * 
  * @param dev
  */
 void counters_pulse(struct counters_device *dev) {
     struct timeval now;
-    
-    // Текущая временная метка
+
+    /* Current timestamp */
     do_gettimeofday(&now);
     
     spin_lock(&dev->measurements_lock);
-    
-    // Подсчет общего кол-ва импульсов
+
+    /* Total pulses */
     dev->pulse_count++;
 
     if(dev->last_pulse.tv_sec || dev->last_pulse.tv_usec) {
@@ -287,7 +281,7 @@ void counters_pulse(struct counters_device *dev) {
         // Определяем время, которое прошло с момента его регистрации
         if(timeval_subtract(&dev->last_pulse_period, &now, &dev->last_pulse)) {
             // Текущее значение меньше предыдущего (т.е. было переполнение)
-            // @TODO: Пофиксить переполнение
+            // @TODO: Fix time overflow
             dev->last_pulse_period.tv_sec = 0;
             dev->last_pulse_period.tv_usec = 0;
         }
@@ -320,8 +314,8 @@ void counters_pulse(struct counters_device *dev) {
             memcpy(&dev->average_pulse_period, &dev->last_pulse_period, sizeof(dev->average_pulse_period));
         }
     }
-    
-    // Текущая временная метка
+
+    /* Current timestamp */
     memcpy(&dev->last_pulse, &now, sizeof(dev->last_pulse));
     
     spin_unlock(&dev->measurements_lock);
@@ -329,7 +323,8 @@ void counters_pulse(struct counters_device *dev) {
 EXPORT_SYMBOL(counters_pulse);
 
 /**
- * Освобождение ресурсов, выделенных counters_allocate_device()
+ * Free resources, allocated by  counters_allocate_device()
+ * @param device
  */
 static void counters_device_release(struct device *device) {
     struct counters_device *cdev = to_counters_device(device);
@@ -343,12 +338,16 @@ static void counters_device_release(struct device *device) {
     pvt = dev_get_drvdata(&cdev->dev);
 
     if(pvt) {
-        TRACE(KERN_INFO, "Deallocate driver's private data: %pK\n", pvt);
+#if 0        
+        TRACE(KERN_DEBUG, "Deallocate driver's private data: %pK\n", pvt);
+#endif        
         
         kfree(pvt);
     }
     
-    TRACE(KERN_INFO, "Deallocate class data: %pK\n", cdev);
+#if 0        
+    TRACE(KERN_DEBUG, "Deallocate class data: %pK\n", cdev);
+#endif    
     
     /* Release string resource */
     kfree_const(cdev->name);
@@ -369,7 +368,7 @@ static ssize_t name_show(struct device *device,
 }
 
 /**
- * Программная имитация импульса
+ * Simulate pulse
  * 
  * @param device
  * @param attr
@@ -387,7 +386,7 @@ static ssize_t pulse_store(struct device *device,
 }
 
 /**
- * Прочитать счетчик подсчитанных импульсов
+ * Retrieve pulse count
  * 
  * @param device
  * @param attr
@@ -415,7 +414,7 @@ static ssize_t count_show(struct device *device,
 }
 
 /**
- * Перезаписать счетчик подсчитанных импульсов
+ * Overwrite pulse count value
  * 
  * @param device
  * @param attr
@@ -444,14 +443,6 @@ static ssize_t count_store(struct device *device,
     return -EINVAL;
 }
 
-/**
- * Прочитать время между последними импульсами
- * 
- * @param device
- * @param attr
- * @param buf
- * @return время в наносекундах
- */
 static ssize_t last_pulse_period_show(struct device *device, 
                                       struct device_attribute *attr, 
                                       char *buf) {
@@ -470,15 +461,6 @@ static ssize_t last_pulse_period_show(struct device *device,
         scnprintf(buf, PAGE_SIZE, "%u", 0);
 }
 
-/**
- * Перезаписать время между последними импульсами
- * 
- * @param device
- * @param attr
- * @param buf
- * @param size
- * @return 
- */
 static ssize_t last_pulse_period_store(struct device *device, 
                                        struct device_attribute *attr, 
                                        const char *buf, 
@@ -495,14 +477,6 @@ static ssize_t last_pulse_period_store(struct device *device,
     return size;
 }
 
-/**
- * Прочитать среднее время между импульсами
- * 
- * @param device
- * @param attr
- * @param buf
- * @return 
- */
 static ssize_t average_pulse_period_show(struct device *device, 
                                          struct device_attribute *attr, 
                                          char *buf) {
@@ -521,15 +495,6 @@ static ssize_t average_pulse_period_show(struct device *device,
         scnprintf(buf, PAGE_SIZE, "%u", 0);
 }
 
-/**
- * Перезаписать среднее время между импульсами
- * 
- * @param device
- * @param attr
- * @param buf
- * @param size
- * @return 
- */
 static ssize_t average_pulse_period_store(struct device *device, 
                                           struct device_attribute *attr, 
                                           const char *buf, 
@@ -571,12 +536,12 @@ static char *counters_devnode(struct device *dev, umode_t *mode)
 }
 
 /**
- * Вычисляем значение (*x) - (*y)
+ * Calculate (*x) - (*y)
  * 
  * @param result
  * @param x
  * @param y
- * @return 1, если разница отрицательная, иначе 0
+ * @return 1 if negative result, else 0
  */
 static int timeval_subtract(struct timeval *result, 
                             struct timeval *x, 

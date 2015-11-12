@@ -42,25 +42,18 @@ static struct platform_driver gpio_pulse_counter_device_driver = {
         .driver         = {
                 .name   = "gpio-pulse-counter",
                 .of_match_table = of_match_ptr(pulse_counter_of_match),
-/*
-                .pm     = &gpio_keys_pm_ops,
-                .of_match_table = of_match_ptr(gpio_keys_of_match),
- */
         }
 };
 
 static irqreturn_t device_isr(int irq, 
                               void *dev_id) {
-//    TRACE(KERN_INFO, "IRQ: %d, devid: %pK\n", irq, dev_id);
-    
     if(dev_id) {
-        /* Account this pulse */
+        /* Handle detected pulse */
         counters_pulse((struct counters_device*)dev_id);
         
         /* IRQ handled by this device */
         return IRQ_HANDLED;
     }
-    
     
     /* IRQ not handled by this device */
     return IRQ_NONE;
@@ -69,10 +62,14 @@ static irqreturn_t device_isr(int irq,
 static void shutdown_device(struct counters_device *cdev) {
     struct gpio_pulse_counter *drvdata = dev_get_drvdata(&cdev->dev);
     
-    TRACE(KERN_INFO, "Driver's shutdown routine for cdev=%pK, drvdata=%pK\n", cdev, drvdata);
+#if 0        
+    TRACE(KERN_DEBUG, "Driver's shutdown routine for cdev=%pK, drvdata=%pK\n", cdev, drvdata);
+#endif
 
     if(drvdata->irq) {
+#if 0        
         TRACE(KERN_DEBUG, "Release IRQ %d\n", drvdata->irq);
+#endif
         
         /* Free IRQ */
         free_irq(drvdata->irq, cdev);
@@ -175,7 +172,9 @@ static int device_driver_probe_dt(struct platform_device *pdev,
     if(node) {
         struct device_node *pp;
         
-        TRACE(KERN_INFO, "Populate device tree nodes (total=%u)\n", of_get_child_count(node));
+#if 0        
+        TRACE(KERN_DEBUG, "Populate device tree nodes (total=%u)\n", of_get_child_count(node));
+#endif
         
         for_each_child_of_node(node, pp) {
             int gpio = of_get_gpio(pp, 0);
@@ -204,7 +203,9 @@ static int device_driver_probe_dt(struct platform_device *pdev,
                     if(entry) {
                         struct list_head *devlist = platform_get_drvdata(pdev);
 
-                        TRACE(KERN_INFO, "Allocated deventry=%pK\n", entry);
+#if 0        
+                        TRACE(KERN_DEBUG, "Allocated deventry=%pK\n", entry);
+#endif
                         
                         INIT_LIST_HEAD(&entry->list);
                         entry->cdev = cdev;
@@ -242,15 +243,15 @@ static int device_driver_probe(struct platform_device *pdev) {
         return -ENOMEM;
     }
     
-    TRACE(KERN_INFO, "Allocated devlist=%pK\n", devlist);
+#if 0        
+    TRACE(KERN_DEBUG, "Allocated devlist=%pK\n", devlist);
+#endif
     
     INIT_LIST_HEAD(devlist);
     
     mutex_lock(&this_driver_lock);
     
     platform_set_drvdata(pdev, devlist);
-    
-    TRACE(KERN_INFO, "Called device driver probe.\n");
     
     if(of_have_populated_dt()) {
         // Используется device tree
@@ -283,8 +284,6 @@ static int device_driver_remove(struct platform_device *pdev) {
 
     mutex_unlock(&this_driver_lock);
     
-    TRACE(KERN_INFO, "Called device driver remove.\n");
-    
     if(devlist) {
         struct list_head *pos;
         struct list_head *n;
@@ -300,13 +299,17 @@ static int device_driver_remove(struct platform_device *pdev) {
             /* Unregister device */
             counters_unregister_device(entry->cdev);
             
-            TRACE(KERN_INFO, "Free deventry=%pK\n", entry);
+#if 0        
+            TRACE(KERN_DEBUG, "Free deventry=%pK\n", entry);
+#endif
             
             /* Free memory */
             kfree(entry);
         }
 
-        TRACE(KERN_INFO, "Free devlist=%pK\n", devlist);
+#if 0        
+        TRACE(KERN_DEBUG, "Free devlist=%pK\n", devlist);
+#endif
         
         /* Free platform driver data */
         kfree(devlist);

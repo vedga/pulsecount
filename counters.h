@@ -4,36 +4,34 @@
 #include <linux/spinlock.h>
 #include <linux/time.h>
 
-/* Имя класса устройств */
+/* Device class name */
 #define DEVICE_CLASS "counters"
-/* Имена устройств в классе */
+/* Device base name */
 #define DEVICE_NAME  "counter"
 
 struct counters_device {
     /* Physical resource name */
     const char* name;
-    /* Для эксклюзивного доступа к результатам измерений */
+    /* Measuremens lock */
     spinlock_t measurements_lock;
-    /* Кол-во подсчитанных импульсов на устройстве */
+    /* Detected pulse count */
     unsigned long pulse_count;
-    /* Временная точка последнего обнаруженного импульса */
+    /* Last detected pulse timestamp */
     struct timeval last_pulse;
-    /* Время, за которое был обнаружен последний зафиксированный импульс */
+    /* Last detected pulse period (us) */
     struct timeval last_pulse_period;
-    /* Среднее время между импульсами */
+    /* Average pulse period (us) */
     struct timeval average_pulse_period;
     /* Release device driver's resources function */
     void (*shutdown)(struct counters_device *);
     /* Kernel device resource */
     struct device dev;
 };
-/* Метод получения адреса struct counters_device из адреса переменной dev,
- * которая расположена в данной структуре.
- */
+/* Retrieve struct counters_device from struct device pointer */
 #define to_counters_device(d) container_of(d, struct counters_device, dev)
 
 /**
- * Увеличение счетчика использования структуры struct device
+ * Increment struct device usage counter
  * 
  * @param dev
  * @return 
@@ -43,7 +41,8 @@ static inline struct counters_device *counters_get_device(struct counters_device
 }
 
 /**
- * Уменьшение счетчика использования структуры struct device
+ * Decrement struct device usage counter
+ * 
  * @param dev
  */
 static inline void counters_put_device(struct counters_device *dev) {

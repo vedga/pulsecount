@@ -37,3 +37,5 @@ counters {
         };
 };
 ```
+
+#### Check functionality
