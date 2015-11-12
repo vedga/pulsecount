@@ -4,6 +4,7 @@
 
 #### Device tree configuration example for Banana PI:
 
+```
 /* Device node */
 counters {
         compatible = "gpio-pulse-counter";
@@ -35,4 +36,4 @@ counters {
                 allwinner,pull = <SUN4I_PINCTRL_NO_PULL>;
         };
 };
-
+```
