@@ -71,10 +71,16 @@ static void shutdown_device(struct counters_device *cdev) {
     
     TRACE(KERN_INFO, "Driver's shutdown routine for cdev=%pK, drvdata=%pK\n", cdev, drvdata);
 
-    /* Free IRQ */
-    free_irq(drvdata->irq, cdev);
+    if(drvdata->irq) {
+        TRACE(KERN_DEBUG, "Release IRQ %d\n", drvdata->irq);
+        
+        /* Free IRQ */
+        free_irq(drvdata->irq, cdev);
+    }
     
     if(gpio_is_valid(drvdata->gpio)) {
+        TRACE(KERN_DEBUG, "Release GPIO pin %d\n", drvdata->gpio);
+        
         /* Need to free GPIO pin */
         devm_gpio_free(&cdev->dev, drvdata->gpio);
     }
@@ -104,8 +110,9 @@ struct counters_device *build_device(const char *name, int irq, int gpio) {
         struct gpio_pulse_counter *drvdata = dev_get_drvdata(&cdev->dev);
         int status;
 
-        drvdata->irq = irq;
-        drvdata->gpio = gpio;
+        /* IRQ and GPIO still not allocated */
+        drvdata->irq = 0;
+        drvdata->gpio = -EINVAL;
 
         status = counters_register_device(cdev);
 
@@ -129,6 +136,12 @@ struct counters_device *build_device(const char *name, int irq, int gpio) {
                 return ERR_PTR(status);
             }
         }
+
+        /* Some hardware resources may be allocated, need special driver's shutdown routine */
+        cdev->shutdown = shutdown_device;
+        
+        /* GPIO is allocated and must be free late */
+        drvdata->gpio = gpio;
         
         /* Attach IRQ handler */
         status = request_irq(irq, 
@@ -144,9 +157,9 @@ struct counters_device *build_device(const char *name, int irq, int gpio) {
             
             return ERR_PTR(status);
         }
-        
-        /* Assign special driver's shutdown routine */
-        cdev->shutdown = shutdown_device;
+
+        /* IRQ is allocated and must be free late */
+        drvdata->irq = irq;
         
         return cdev;
     }
