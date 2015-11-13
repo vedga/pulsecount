@@ -10,6 +10,7 @@
 #include <linux/list.h>
 #include <linux/interrupt.h>
 #include <linux/gpio.h>
+#include <linux/printk.h>
 
 #include "counters.h"
 
@@ -17,7 +18,10 @@
 #define DRIVER_DESC   "GPIO pulse counter"
 #define DRIVER_VERSION "0.1"
 
-#define TRACE(level, ...) printk(level KBUILD_MODNAME ": " __VA_ARGS__);
+#ifdef pr_fmt
+#undef pr_fmt
+#endif
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 struct gpio_pulse_counter_device {
     struct counters_device* cdev;
@@ -62,14 +66,10 @@ static irqreturn_t device_isr(int irq,
 static void shutdown_device(struct counters_device *cdev) {
     struct gpio_pulse_counter *drvdata = dev_get_drvdata(&cdev->dev);
     
-#if 0        
-    TRACE(KERN_DEBUG, "Driver's shutdown routine for cdev=%pK, drvdata=%pK\n", cdev, drvdata);
-#endif
+    pr_devel("Driver's shutdown routine for cdev=%pK, drvdata=%pK\n", cdev, drvdata);
 
     if(drvdata->irq) {
-#if 0        
-        TRACE(KERN_DEBUG, "Release IRQ %d\n", drvdata->irq);
-#endif
+        pr_devel("Release IRQ %d\n", drvdata->irq);
         
         /* Free IRQ */
         free_irq(drvdata->irq, cdev);
@@ -78,7 +78,7 @@ static void shutdown_device(struct counters_device *cdev) {
     /* We don't need release GPIO resource, because it released automatically */
 #if 0    
     if(gpio_is_valid(drvdata->gpio)) {
-        TRACE(KERN_DEBUG, "Release GPIO pin %d\n", drvdata->gpio);
+        pr_devel("Release GPIO pin %d\n", drvdata->gpio);
         
         /* Need to free GPIO pin */
         devm_gpio_free(&cdev->dev, drvdata->gpio);
@@ -103,7 +103,7 @@ struct counters_device *build_device(const char *name, int irq, int gpio) {
         counters_allocate_device(name, sizeof(struct gpio_pulse_counter));
 
     if(IS_ERR_OR_NULL(cdev)) {
-        TRACE(KERN_ALERT, "Unable to allocate class data.\n");
+        pr_alert("Unable to allocate class data\n");
 
         return cdev ? cdev : ERR_PTR(-ENOMEM);
     } else {
@@ -117,7 +117,7 @@ struct counters_device *build_device(const char *name, int irq, int gpio) {
         status = counters_register_device(cdev);
 
         if(status) {
-            TRACE(KERN_ALERT, "Unable to register device.\n");
+            pr_alert("Unable to register device\n");
 
             counters_free_device(cdev);
 
@@ -129,7 +129,7 @@ struct counters_device *build_device(const char *name, int irq, int gpio) {
             status = devm_gpio_request(&cdev->dev, gpio, name);
             
             if(status) {
-                TRACE(KERN_ALERT, "Unable to allocate GPIO pin %d.\n", gpio);
+                pr_alert("Unable to allocate GPIO pin %d\n", gpio);
                 
                 counters_unregister_device(cdev);
             
@@ -151,7 +151,7 @@ struct counters_device *build_device(const char *name, int irq, int gpio) {
                              cdev);  
 
         if(status) {
-            TRACE(KERN_ALERT, "Unable to register IRQ handler.\n");
+            pr_alert("Unable to register IRQ handler\n");
             
             counters_unregister_device(cdev);
             
@@ -172,9 +172,7 @@ static int device_driver_probe_dt(struct platform_device *pdev,
     if(node) {
         struct device_node *pp;
         
-#if 0        
-        TRACE(KERN_DEBUG, "Populate device tree nodes (total=%u)\n", of_get_child_count(node));
-#endif
+        pr_devel("Populate device tree nodes (total=%u)\n", of_get_child_count(node));
         
         for_each_child_of_node(node, pp) {
             int gpio = of_get_gpio(pp, 0);
@@ -195,7 +193,7 @@ static int device_driver_probe_dt(struct platform_device *pdev,
                 struct counters_device *cdev = build_device(pp->name, irq, gpio);
                 
                 if(IS_ERR_OR_NULL(cdev)) {
-                    TRACE(KERN_ALERT, "Unable to allocate data for %s, skipped.\n", pp->name);
+                    pr_alert("Unable to allocate data for %s, skipped\n", pp->name);
                 } else {
                     struct gpio_pulse_counter_device *entry = 
                         kmalloc(sizeof(struct gpio_pulse_counter_device), GFP_KERNEL);
@@ -203,9 +201,7 @@ static int device_driver_probe_dt(struct platform_device *pdev,
                     if(entry) {
                         struct list_head *devlist = platform_get_drvdata(pdev);
 
-#if 0        
-                        TRACE(KERN_DEBUG, "Allocated deventry=%pK\n", entry);
-#endif
+                        pr_devel("Allocated deventry=%pK\n", entry);
                         
                         INIT_LIST_HEAD(&entry->list);
                         entry->cdev = cdev;
@@ -213,20 +209,20 @@ static int device_driver_probe_dt(struct platform_device *pdev,
                         list_add(&entry->list, devlist);
                         
                         if(gpio_is_valid(gpio)) {
-                            TRACE(KERN_INFO, "Device #%u %s: IRQ: %d GPIO: %d\n", devices, pp->name, irq, gpio);
+                            pr_info("Device #%u %s: IRQ: %d GPIO: %d\n", devices, pp->name, irq, gpio);
                         } else {
-                            TRACE(KERN_INFO, "Device #%u %s: IRQ: %d\n", devices, pp->name, irq);
+                            pr_info("Device #%u %s: IRQ: %d\n", devices, pp->name, irq);
                         }
 
                         devices++;
                     } else {
                         counters_unregister_device(cdev);
                         
-                        TRACE(KERN_ALERT, "Unable to allocate device entry for %s, skipped.\n", pp->name);
+                        pr_alert("Unable to allocate device entry for %s, skipped\n", pp->name);
                     }
                 }
             } else {
-                TRACE(KERN_ALERT, "Device %s don't have IRQ, skipped.\n", pp->name);
+                pr_alert("Device %s don't have IRQ, skipped\n", pp->name);
             }
         }
     }
@@ -238,14 +234,12 @@ static int device_driver_probe(struct platform_device *pdev) {
     struct list_head *devlist = kmalloc(sizeof(struct list_head), GFP_KERNEL);
     
     if(!devlist) {
-        TRACE(KERN_ALERT, "Unable to allocate memory for device list.\n");
+        pr_alert("Unable to allocate memory for device list\n");
         
         return -ENOMEM;
     }
     
-#if 0        
-    TRACE(KERN_DEBUG, "Allocated devlist=%pK\n", devlist);
-#endif
+    pr_devel("Allocated devlist=%pK\n", devlist);
     
     INIT_LIST_HEAD(devlist);
     
@@ -257,7 +251,7 @@ static int device_driver_probe(struct platform_device *pdev) {
         // Используется device tree
         device_driver_probe_dt(pdev, pdev->dev.of_node);
     } else {
-        TRACE(KERN_ALERT, "Currently support only device tree configuration data.\n");
+        pr_alert("Currently support only device tree configuration data\n");
 
         platform_set_drvdata(pdev, NULL);
         
@@ -299,17 +293,13 @@ static int device_driver_remove(struct platform_device *pdev) {
             /* Unregister device */
             counters_unregister_device(entry->cdev);
             
-#if 0        
-            TRACE(KERN_DEBUG, "Free deventry=%pK\n", entry);
-#endif
+            pr_devel("Free deventry=%pK\n", entry);
             
             /* Free memory */
             kfree(entry);
         }
 
-#if 0        
-        TRACE(KERN_DEBUG, "Free devlist=%pK\n", devlist);
-#endif
+        pr_devel("Free devlist=%pK\n", devlist);
         
         /* Free platform driver data */
         kfree(devlist);

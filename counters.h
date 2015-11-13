@@ -1,5 +1,5 @@
-#ifndef __COUNTERS_H
-#define __COUNTERS_H
+#ifndef __LINUX_COUNTERS_H
+#define __LINUX_COUNTERS_H
 
 #include <linux/spinlock.h>
 #include <linux/time.h>
@@ -9,18 +9,21 @@
 /* Device base name */
 #define DEVICE_NAME  "counter"
 
+/*
+ * Counters class device driver common resource
+ */
 struct counters_device {
     /* Physical resource name */
     const char* name;
     /* Measuremens lock */
     spinlock_t measurements_lock;
-    /* Detected pulse count */
+    /* Measuremens: detected pulse count */
     unsigned long pulse_count;
-    /* Last detected pulse timestamp */
+    /* Measuremens: last detected pulse timestamp */
     struct timeval last_pulse;
-    /* Last detected pulse period (us) */
+    /* Measuremens: last detected pulse period (us) */
     struct timeval last_pulse_period;
-    /* Average pulse period (us) */
+    /* Measuremens: average pulse period (us) */
     struct timeval average_pulse_period;
     /* Release device driver's resources function */
     void (*shutdown)(struct counters_device *);
@@ -46,13 +49,17 @@ static inline struct counters_device *counters_get_device(struct counters_device
  * @param dev
  */
 static inline void counters_put_device(struct counters_device *dev) {
-    if(dev) {
+    if(dev)
         put_device(&dev->dev);
-    }
 }
 
+/*
+ * GPIO pulse counter device driver resource
+ */
 struct gpio_pulse_counter {
+    /* GPIO pin IRQ number */
     int irq;
+    /* GPIO pin number */
     int gpio;
 };
 

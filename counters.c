@@ -4,6 +4,7 @@
 #include <linux/device.h>
 #include <linux/slab.h>
 #include <linux/string.h>
+#include <linux/printk.h>
 
 #include "counters.h"
 
@@ -13,19 +14,24 @@
 
 #define USEC_VALUE 1000000
 
-#define TRACE(level, ...) printk(level KBUILD_MODNAME ": " __VA_ARGS__);
+#ifdef pr_fmt
+#undef pr_fmt
+#endif
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
-
+/* Forwarding functions declarations */
 static char *counters_devnode(struct device *dev, umode_t *mode);
-static ssize_t clear_count_when_reading_show(struct class *class, struct class_attribute *attr, char *buf);
-static ssize_t clear_count_when_reading_store(struct class *class, struct class_attribute *attr, const char *buf, size_t size);
+static ssize_t clear_count_when_reading_show(struct class *class, 
+                                             struct class_attribute *attr, 
+                                             char *buf);
+static ssize_t clear_count_when_reading_store(struct class *class, 
+                                              struct class_attribute *attr, 
+                                              const char *buf, 
+                                              size_t size);
 static void counters_device_release(struct device *device);
-
 static ssize_t name_show(struct device *device, 
                          struct device_attribute *attr, 
                          char *buf);
-
-
 static ssize_t pulse_store(struct device *device, 
                            struct device_attribute *attr, 
                            const char *buf, 
@@ -51,13 +57,12 @@ static ssize_t average_pulse_period_store(struct device *device,
                                           struct device_attribute *attr, 
                                           const char *buf, 
                                           size_t size);
-
 static int timeval_subtract(struct timeval *result, 
                             struct timeval  *x, 
                             struct timeval  *y);
 
 
-/* Clear conters when it readed */
+/* Clear conters when value is readed */
 static int clear_count_when_reading = 0;
 
 /* Root device attributes */
@@ -119,8 +124,8 @@ EXPORT_SYMBOL_GPL(counters_class);
  * @return 
  * 
  * NOTE:
- * For free allocated by this function resource use:
- * counters_free_device(), if device is not registered;
+ * For release allocated by this function resource you must use:
+ * counters_free_device(), if device still not registered;
  * counters_unregister_device(), if device is registered by counters_register_device()
  */
 struct counters_device *counters_allocate_device(const char* name, 
@@ -128,14 +133,12 @@ struct counters_device *counters_allocate_device(const char* name,
     static atomic_t counter_no = ATOMIC_INIT(-1);
     void *pvt = driver_private_data_size ? kzalloc(driver_private_data_size, GFP_KERNEL) : NULL;
     struct counters_device *dev;
-    
+
     if(pvt) {
-#if 0        
-        TRACE(KERN_DEBUG, "Allocated driver's private data: %pK\n", pvt);
-#endif        
+        pr_devel("Allocated driver's private data: %pK\n", pvt);
     } else {
         if(driver_private_data_size) {
-            TRACE(KERN_ALERT, "Unable to allocate private driver's memory.\n");
+            pr_alert("Unable to allocate private driver's memory\n");
 
             return ERR_PTR(-ENOMEM);
         }
@@ -155,7 +158,7 @@ struct counters_device *counters_allocate_device(const char* name,
             
             kfree(dev);
             
-            TRACE(KERN_ALERT, "Unable to allocate memory for device class data.\n");
+            pr_alert("Unable to allocate memory for device class data\n");
 
             return ERR_PTR(-ENOMEM);
         }
@@ -188,7 +191,7 @@ struct counters_device *counters_allocate_device(const char* name,
             kfree(pvt);
         }
         
-        TRACE(KERN_ALERT, "Unable to allocate memory for device class data.\n");
+        pr_alert("Unable to allocate memory for device class data\n");
         
         return ERR_PTR(-ENOMEM);
     }
@@ -226,9 +229,7 @@ EXPORT_SYMBOL(counters_free_device);
 int counters_register_device(struct counters_device *dev) {
     int rc;
 
-#if 0            
-    TRACE(KERN_DEBUG, "Register class device: %pK\n", dev);
-#endif    
+    pr_devel("Register class device: %pK\n", dev);
     
     rc = device_add(&dev->dev);
 
@@ -247,9 +248,7 @@ EXPORT_SYMBOL(counters_register_device);
  * @param dev
  */
 void counters_unregister_device(struct counters_device *dev) {
-#if 0        
-    TRACE(KERN_DEBUG, "Unregister class device: %pK\n", dev);
-#endif    
+    pr_devel("Unregister class device: %pK\n", dev);
 
     /* Remove attribute name for this device */
     device_remove_file(&dev->dev, &dev_attr_name);
@@ -277,17 +276,16 @@ void counters_pulse(struct counters_device *dev) {
     dev->pulse_count++;
 
     if(dev->last_pulse.tv_sec || dev->last_pulse.tv_usec) {
-        // Есть информация о временной точке предпоследнего импульса
-        // Определяем время, которое прошло с момента его регистрации
+        /* We have previous pulse timestamp. Calculate last pulse period. */
         if(timeval_subtract(&dev->last_pulse_period, &now, &dev->last_pulse)) {
-            // Текущее значение меньше предыдущего (т.е. было переполнение)
-            // @TODO: Fix time overflow
+            /* Last timestamp less than previous (i.e. overflow detected) */
+            /* @TODO: Fix time overflow */
             dev->last_pulse_period.tv_sec = 0;
             dev->last_pulse_period.tv_usec = 0;
         }
         
         if(dev->average_pulse_period.tv_sec || dev->average_pulse_period.tv_usec) {
-            // Не первое измерение, можем продолжать вычислять среднее значение
+            /* Not first measurement, can calculate average period value */
             dev->average_pulse_period.tv_sec += dev->last_pulse_period.tv_sec;
             dev->average_pulse_period.tv_usec += dev->last_pulse_period.tv_usec;
             
@@ -297,7 +295,7 @@ void counters_pulse(struct counters_device *dev) {
                 dev->average_pulse_period.tv_usec %= USEC_VALUE;
             }
             
-            // Делим среднее значение на 2
+            /* Divide average value by 2 */
             dev->average_pulse_period.tv_usec >>= 1;
             if(dev->average_pulse_period.tv_sec & 1) {
                 dev->average_pulse_period.tv_usec += USEC_VALUE / 2;
@@ -310,7 +308,7 @@ void counters_pulse(struct counters_device *dev) {
                 dev->average_pulse_period.tv_usec %= USEC_VALUE;
             }
         } else {
-            // Первое измерение - пока не можем вычислить среднее значение
+            /* First measurement: can't calculate average period now */
             memcpy(&dev->average_pulse_period, &dev->last_pulse_period, sizeof(dev->average_pulse_period));
         }
     }
@@ -324,6 +322,7 @@ EXPORT_SYMBOL(counters_pulse);
 
 /**
  * Free resources, allocated by  counters_allocate_device()
+ * 
  * @param device
  */
 static void counters_device_release(struct device *device) {
@@ -338,16 +337,12 @@ static void counters_device_release(struct device *device) {
     pvt = dev_get_drvdata(&cdev->dev);
 
     if(pvt) {
-#if 0        
-        TRACE(KERN_DEBUG, "Deallocate driver's private data: %pK\n", pvt);
-#endif        
+        pr_devel("Deallocate driver's private data: %pK\n", pvt);
         
         kfree(pvt);
     }
     
-#if 0        
-    TRACE(KERN_DEBUG, "Deallocate class data: %pK\n", cdev);
-#endif    
+    pr_devel("Deallocate class data: %pK\n", cdev);
     
     /* Release string resource */
     kfree_const(cdev->name);
@@ -355,7 +350,8 @@ static void counters_device_release(struct device *device) {
     /* Release counters_device structure */
     kfree(cdev);
 
-    /* Счетчик ссылок на модуль был увеличен при выделении ресурсов, теперь его можно уменьшить */
+    /* Module usage count incremented by counters_allocate_device(), now we
+     * can decrement it. */
     module_put(THIS_MODULE);
 }
 
@@ -572,9 +568,9 @@ static int __init counters_init(void)
     int rc = class_register(&counters_class);
     
     if(rc) {
-        TRACE(KERN_ALERT, "Load class driver failed.\n");
+        pr_alert("Load class driver failed\n");
     } else {
-        TRACE(KERN_INFO, "Class driver loaded.\n");
+        pr_info("Class driver loaded\n");
     }
 
     return rc;
@@ -582,7 +578,7 @@ static int __init counters_init(void)
 
 static void __exit counters_exit(void)
 {
-    TRACE(KERN_INFO, "Shutdown class driver.\n");
+    pr_info("Shutdown class driver\n");
 
     class_unregister(&counters_class);
 }
