@@ -393,9 +393,10 @@ static ssize_t count_show(struct device *device,
                           struct device_attribute *attr, 
                           char *buf) {
     unsigned long value;
+    unsigned long flags;
     struct counters_device *dev = to_counters_device(device);
 
-    spin_lock(&dev->measurements_lock);
+    spin_lock_irqsave(&dev->measurements_lock, flags);
     
     value = dev->pulse_count;
     
@@ -404,7 +405,7 @@ static ssize_t count_show(struct device *device,
         dev->pulse_count = 0;
     }
     
-    spin_unlock(&dev->measurements_lock);
+    spin_unlock_irqrestore(&dev->measurements_lock, flags);
     
     return scnprintf(buf, PAGE_SIZE, "%lu", value);
 }
@@ -423,15 +424,16 @@ static ssize_t count_store(struct device *device,
                            const char *buf, 
                            size_t size) {
     unsigned long value;
+    unsigned long flags;
     
     if(sscanf(buf, "%lu", &value) == 1) {
         struct counters_device *dev = to_counters_device(device);
         
-        spin_lock(&dev->measurements_lock);
+        spin_lock_irqsave(&dev->measurements_lock, flags);
         
         dev->pulse_count = value;
         
-        spin_unlock(&dev->measurements_lock);
+        spin_unlock_irqrestore(&dev->measurements_lock, flags);
         
         return size;
     }
@@ -443,14 +445,15 @@ static ssize_t last_pulse_period_show(struct device *device,
                                       struct device_attribute *attr, 
                                       char *buf) {
     struct timeval value;
+    unsigned long flags;
     
     struct counters_device *dev = to_counters_device(device);
 
-    spin_lock(&dev->measurements_lock);
+    spin_lock_irqsave(&dev->measurements_lock, flags);
     
     memcpy(&value, &dev->last_pulse_period, sizeof(value));
     
-    spin_unlock(&dev->measurements_lock);
+    spin_unlock_irqrestore(&dev->measurements_lock, flags);
     
     return (value.tv_sec || value.tv_usec) ?
         scnprintf(buf, PAGE_SIZE, "%lu%lu", value.tv_sec, value.tv_usec) :
@@ -461,14 +464,15 @@ static ssize_t last_pulse_period_store(struct device *device,
                                        struct device_attribute *attr, 
                                        const char *buf, 
                                        size_t size) {
+    unsigned long flags;
     struct counters_device *dev = to_counters_device(device);
 
-    spin_lock(&dev->measurements_lock);
+    spin_lock_irqsave(&dev->measurements_lock, flags);
 
     dev->last_pulse_period.tv_sec = 0;
     dev->last_pulse_period.tv_usec = 0;
 
-    spin_unlock(&dev->measurements_lock);
+    spin_unlock_irqrestore(&dev->measurements_lock, flags);
 
     return size;
 }
@@ -477,14 +481,14 @@ static ssize_t average_pulse_period_show(struct device *device,
                                          struct device_attribute *attr, 
                                          char *buf) {
     struct timeval value;
-    
+    unsigned long flags;
     struct counters_device *dev = to_counters_device(device);
 
-    spin_lock(&dev->measurements_lock);
+    spin_lock_irqsave(&dev->measurements_lock, flags);
     
     memcpy(&value, &dev->average_pulse_period, sizeof(value));
     
-    spin_unlock(&dev->measurements_lock);
+    spin_unlock_irqrestore(&dev->measurements_lock, flags);
     
     return (value.tv_sec || value.tv_usec) ?
         scnprintf(buf, PAGE_SIZE, "%lu%lu", value.tv_sec, value.tv_usec) :
@@ -495,14 +499,15 @@ static ssize_t average_pulse_period_store(struct device *device,
                                           struct device_attribute *attr, 
                                           const char *buf, 
                                           size_t size) {
+    unsigned long flags;
     struct counters_device *dev = to_counters_device(device);
 
-    spin_lock(&dev->measurements_lock);
+    spin_lock_irqsave(&dev->measurements_lock, flags);
 
     dev->average_pulse_period.tv_sec = 0;
     dev->average_pulse_period.tv_usec = 0;
 
-    spin_unlock(&dev->measurements_lock);
+    spin_unlock_irqrestore(&dev->measurements_lock, flags);
 
     return size;
 }
